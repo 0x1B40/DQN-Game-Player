@@ -1,7 +1,8 @@
+# main.py
 import tkinter as tk
-from modules.gui import GameLearningApp
+from modules.gui import GameScreenApp
 
 if __name__ == "__main__":
     root = tk.Tk()
-    app = GameLearningApp(root)
+    app = GameScreenApp(root)
     root.mainloop()
