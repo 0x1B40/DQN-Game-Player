@@ -4,6 +4,7 @@ import torch.optim as optim
 import numpy as np
 from .dqn_model import DuelingDistributionalDQN
 from .replay_buffer import PrioritizedReplayBuffer
+import os
 
 class DQNAgent:
     def __init__(self, input_shape, n_actions):
@@ -107,3 +108,57 @@ class DQNAgent:
 
     def update_target(self):
         self.target_network.load_state_dict(self.q_network.state_dict())
+
+    def save_model(self, filepath):
+        """
+        Save the Q-network, target network, optimizer, and hyperparameters to a file.
+        """
+        try:
+            os.makedirs(os.path.dirname(filepath), exist_ok=True)
+            torch.save({
+                'q_network_state_dict': self.q_network.state_dict(),
+                'target_network_state_dict': self.target_network.state_dict(),
+                'optimizer_state_dict': self.optimizer.state_dict(),
+                'epsilon': self.epsilon,
+                'input_shape': self.input_shape,
+                'n_actions': self.n_actions,
+                'n_atoms': self.n_atoms,
+                'v_min': self.v_min,
+                'v_max': self.v_max,
+                'gamma': self.gamma,
+                'batch_size': self.batch_size,
+                'n_steps': self.n_steps,
+                'epsilon_min': self.epsilon_min,
+                'epsilon_decay': self.epsilon_decay
+            }, filepath)
+            print(f"Model saved to {filepath}")
+        except Exception as e:
+            print(f"Failed to save model: {e}")
+
+    def load_model(self, filepath):
+        """
+        Load the Q-network, target network, optimizer, and hyperparameters from a file.
+        """
+        try:
+            checkpoint = torch.load(filepath, map_location=self.device)
+            if (checkpoint['input_shape'] != self.input_shape or
+                checkpoint['n_actions'] != self.n_actions):
+                raise ValueError("Loaded model has incompatible input shape or number of actions")
+            
+            self.q_network.load_state_dict(checkpoint['q_network_state_dict'])
+            self.target_network.load_state_dict(checkpoint['target_network_state_dict'])
+            self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            self.epsilon = checkpoint['epsilon']
+            self.n_atoms = checkpoint['n_atoms']
+            self.v_min = checkpoint['v_min']
+            self.v_max = checkpoint['v_max']
+            self.delta_z = (self.v_max - self.v_min) / (self.n_atoms - 1)
+            self.support = torch.linspace(self.v_min, self.v_max, self.n_atoms).to(self.device)
+            self.gamma = checkpoint['gamma']
+            self.batch_size = checkpoint['batch_size']
+            self.n_steps = checkpoint['n_steps']
+            self.epsilon_min = checkpoint['epsilon_min']
+            self.epsilon_decay = checkpoint['epsilon_decay']
+            print(f"Model loaded from {filepath}")
+        except Exception as e:
+            print(f"Failed to load model: {e}")

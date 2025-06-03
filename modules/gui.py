@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, filedialog
 from PIL import Image, ImageTk
 import numpy as np
 import time
@@ -7,10 +7,10 @@ import pyautogui
 import win32gui
 import logging
 from .dqn_agent import DQNAgent
-from .utils import capture_screen, preprocess_frame, execute_action, get_reward
+from .utils import capture_screen, preprocess_frame, execute_action, get_reward, focus_window
 
 # Set up logging
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s', filename='debug.log')
 logger = logging.getLogger(__name__)
 
 class GameScreenApp:
@@ -19,7 +19,7 @@ class GameScreenApp:
         self.root.title("Rainbow DQN Game Learning Agent")
         self.running = False
         self.agent = None
-        self.actions = ["up", "down", "left", "right", "space"]
+        self.actions = ["up", "down", "left", "right", "z", "x", "space"]
         self.window_behaviors = {}
         self.window_positions = {}
         self.window_click_counters = {"left_click": 0, "right_click": 0}
@@ -46,48 +46,50 @@ class GameScreenApp:
         ttk.Button(self.frame, text="Refresh", command=self.refresh_preview).grid(row=0, column=2, padx=5, pady=5)
         ttk.Button(self.frame, text="Reset Model", command=self.reset_model).grid(row=0, column=3, padx=5, pady=5)
         ttk.Button(self.frame, text="Test Action", command=self.test_action).grid(row=0, column=4, padx=5, pady=5)
+        ttk.Button(self.frame, text="Save Model", command=self.save_model).grid(row=0, column=5, padx=5, pady=5)
+        ttk.Button(self.frame, text="Load Model", command=self.load_model).grid(row=0, column=6, padx=5, pady=5)
 
         ttk.Label(self.frame, text="Selection Mode:").grid(row=1, column=0, sticky=tk.W)
-        ttk.OptionMenu(self.frame, self.selection_mode, "Select Window", "Select Window", "Select Mouse Position").grid(row=1, column=1, columnspan=4, padx=5, pady=5)
+        ttk.OptionMenu(self.frame, self.selection_mode, "Select Window", "Select Window", "Select Mouse Position").grid(row=1, column=1, columnspan=6, padx=5, pady=5)
 
         ttk.Label(self.frame, text="Actions:").grid(row=2, column=0, sticky=tk.W)
-        self.action_listbox = tk.Listbox(self.frame, height=5, width=40)
-        self.action_listbox.grid(row=2, column=1, rowspan=3, columnspan=4, padx=5, pady=5)
+        self.action_listbox = tk.Listbox(self.frame, height=7, width=40)
+        self.action_listbox.grid(row=2, column=1, rowspan=3, columnspan=6, padx=5, pady=5)
         for action in self.actions:
             self.action_listbox.insert(tk.END, action)
 
         ttk.Label(self.frame, text="Last Key Pressed:").grid(row=5, column=0, sticky=tk.W)
         self.key_label = ttk.Label(self.frame, text="None")
-        self.key_label.grid(row=5, column=1, columnspan=4, padx=5, pady=5)
+        self.key_label.grid(row=5, column=1, columnspan=6, padx=5, pady=5)
 
         ttk.Label(self.frame, text="Mouse Behavior:").grid(row=6, column=0, sticky=tk.W)
         self.window_behavior = tk.StringVar(value="Fixed")
-        ttk.OptionMenu(self.frame, self.window_behavior, "Fixed", "Fixed", "Random").grid(row=6, column=1, columnspan=4, padx=5, pady=5)
+        ttk.OptionMenu(self.frame, self.window_behavior, "Fixed", "Fixed", "Random").grid(row=6, column=1, columnspan=6, padx=5, pady=5)
 
         ttk.Button(self.frame, text="Add Key", command=self.add_key_action).grid(row=7, column=0, padx=5, pady=5)
-        ttk.Button(self.frame, text="Remove Selected", command=self.remove_action).grid(row=7, column=1, columnspan=4, padx=5, pady=5)
+        ttk.Button(self.frame, text="Remove Selected", command=self.remove_action).grid(row=7, column=1, columnspan=6, padx=5, pady=5)
 
         self.canvas = tk.Canvas(self.frame, width=400, height=300, bg="white")
-        self.canvas.grid(row=8, column=0, columnspan=5, pady=5)
+        self.canvas.grid(row=8, column=0, columnspan=7, pady=5)
         self.canvas.bind("<Button-1>", self.handle_left_click)
         self.canvas.bind("<Button-3>", self.handle_right_click)
         self.canvas.bind("<B1-Motion>", self.update_selection)
         self.canvas.bind("<ButtonRelease-1>", self.end_selection)
 
         self.game_coord_label = ttk.Label(self.frame, text="Game Region: top=0, left=0, width=800, height=600")
-        self.game_coord_label.grid(row=9, column=0, columnspan=5, pady=5)
+        self.game_coord_label.grid(row=9, column=0, columnspan=7, pady=5)
 
         self.status_label = ttk.Label(self.frame, text="Status: Stopped")
-        self.status_label.grid(row=10, column=0, columnspan=5, pady=5)
+        self.status_label.grid(row=10, column=0, columnspan=7, pady=5)
 
         self.episode_label = ttk.Label(self.frame, text="Episode: 0")
-        self.episode_label.grid(row=11, column=0, columnspan=5, pady=5)
+        self.episode_label.grid(row=11, column=0, columnspan=7, pady=5)
 
         self.reward_label = ttk.Label(self.frame, text="Total Reward: 0.0")
-        self.reward_label.grid(row=12, column=0, columnspan=5, pady=5)
+        self.reward_label.grid(row=12, column=0, columnspan=7, pady=5)
 
         self.preview_label = ttk.Label(self.frame)
-        self.preview_label.grid(row=13, column=0, columnspan=5, pady=5)
+        self.preview_label.grid(row=13, column=0, columnspan=7, pady=5)
 
         self.root.bind("<KeyPress>", self.detect_key)
         self.update_screen_preview()
@@ -194,15 +196,28 @@ class GameScreenApp:
             height = int(abs(end_y - self.start_y) * scale_y)
 
             self.window = {"top": top, "left": left, "width": width, "height": height}
-            try:
-                self.screen_window_handle = win32gui.WindowFromPoint((left + width // 2, top + height // 2))
+
+            def find_window():
+                target_handle = None
+                def callback(hwnd, handles):
+                    rect = win32gui.GetWindowRect(hwnd)
+                    if (rect[0] <= left + width // 2 <= rect[2] and
+                        rect[1] <= top + height // 2 <= rect[3] and
+                        win32gui.IsWindowVisible(hwnd)):
+                        handles.append(hwnd)
+                handles = []
+                win32gui.EnumWindows(callback, handles)
+                return handles[0] if handles else None
+
+            self.screen_window_handle = find_window()
+            if self.screen_window_handle:
                 window_title = win32gui.GetWindowText(self.screen_window_handle)
                 logger.debug(f"Selected window handle: {self.screen_window_handle}, Title: {window_title}")
                 if not window_title:
                     logger.warning("Selected window has no title, may not be valid")
                     self.screen_window_handle = None
-            except Exception as e:
-                logger.error(f"Window selection failed: {e}")
+            else:
+                logger.error("Could not find window at selected coordinates")
                 self.screen_window_handle = None
             self.game_coord_label.configure(text=f"Game Region: top={top}, left={left}, width={width}, height={height}")
 
@@ -258,6 +273,31 @@ class GameScreenApp:
         execute_action(action, self.window_behaviors, self.window_positions, self.window, self.screen_window_handle)
         self.status_label.configure(text=f"Status: Tested action {action}")
 
+    def save_model(self):
+        if self.agent is None:
+            logger.error("No model to save")
+            self.status_label.configure(text="Status: No model to save")
+            return
+        filepath = filedialog.asksaveasfilename(
+            defaultextension=".pth",
+            filetypes=[("PyTorch Model", "*.pth"), ("All Files", "*.*")],
+            title="Save Model"
+        )
+        if filepath:
+            self.agent.save_model(filepath)
+            self.status_label.configure(text=f"Status: Model saved to {filepath}")
+
+    def load_model(self):
+        filepath = filedialog.askopenfilename(
+            filetypes=[("PyTorch Model", "*.pth"), ("All Files", "*.*")],
+            title="Load Model"
+        )
+        if filepath:
+            if self.agent is None:
+                self.agent = DQNAgent(self.input_shape, len(self.actions))
+            self.agent.load_model(filepath)
+            self.status_label.configure(text=f"Status: Model loaded from {filepath}")
+
     def stop_learning(self):
         self.running = False
         self.status_label.configure(text="Status: Stopped")
@@ -299,7 +339,9 @@ class GameScreenApp:
             while not done and episode_steps < max_steps:
                 if not self.running:
                     break
+                start_time = time.time()
                 frame = capture_screen(self.window)
+                logger.debug(f"Frame capture took {time.time() - start_time:.3f} seconds")
                 if frame is None:
                     logger.error("Failed to capture frame, stopping episode")
                     break
@@ -312,9 +354,10 @@ class GameScreenApp:
 
                 action_idx = self.agent.get_action(state)
                 action = self.actions[action_idx]
+                logger.debug(f"Selected action: {action} (index: {action_idx})")
                 execute_action(action, self.window_behaviors, self.window_positions, self.window, self.screen_window_handle)
 
-                time.sleep(0.1)
+                time.sleep(0.2)
                 next_frame = capture_screen(self.window)
                 if next_frame is None:
                     logger.error("Failed to capture next frame, stopping episode")
@@ -326,6 +369,7 @@ class GameScreenApp:
 
                 reward = get_reward(state, next_state, next_frame) if prev_frame is not None else 0.0
                 self.total_reward += reward
+                logger.debug(f"Reward: {reward}, Total Reward: {self.total_reward}, Epsilon: {self.agent.epsilon}")
 
                 self.agent.store_transition(state, action_idx, reward, next_state, done)
 
